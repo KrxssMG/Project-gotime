@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Check-in พนักงาน</title>
+    <link rel="manifest" href="./manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="./config.js"></script>
+</head>
+<body class="bg-slate-900 text-white flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-md bg-slate-800 p-6 rounded-2xl shadow-xl border border-slate-700">
+        <!-- แถบสถานะพิกัด -->
+        <div class="flex justify-between items-center bg-slate-900 px-3 py-2 rounded-lg mb-5 text-xs border border-slate-700">
+            <span id="zone-badge" class="font-bold text-amber-400">● กำลังค้นหา GPS...</span>
+            <span id="distance-text" class="text-slate-400">ระยะห่าง: - ม.</span>
+        </div>
+
+        <!-- 1. หน้าผูกเครื่องครั้งแรก -->
+        <div id="screen-bind" class="hidden">
+            <h2 class="text-xl font-bold text-blue-400 mb-1">ผูกอุปกรณ์ครั้งแรก</h2>
+            <p class="text-xs text-slate-400 mb-4">สแกน QR Code ประจำตัวพนักงานเพื่อล็อกมือถือเครื่องนี้</p>
+            <div id="qr-reader" class="w-full rounded-xl overflow-hidden mb-3 bg-black"></div>
+            <button onclick="startScanner()" class="w-full bg-blue-600 hover:bg-blue-500 font-bold py-2.5 rounded-xl mb-4 text-sm">
+                เปิดกล้องสแกน QR Code
+            </button>
+            <div class="border-t border-slate-700 pt-3">
+                <p class="text-xs text-slate-400 mb-2">หรือกรอกรหัสพนักงาน (กรณีทดสอบบนคอม):</p>
+                <div class="flex gap-2">
+                    <input id="manual-id" type="text" placeholder="เช่น EMP001" class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm">
+                    <button onclick="bindDevice(document.getElementById('manual-id').value)" class="bg-emerald-600 px-4 py-2 rounded-lg text-sm font-bold">ผูกเครื่อง</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. หน้าอยู่นอกพื้นที่ -->
+        <div id="screen-outside" class="hidden text-center py-5">
+            <div class="w-14 h-14 bg-red-500/20 text-red-400 rounded-full flex items-center justify-center mx-auto mb-3 text-2xl font-bold">!</div>
+            <h2 class="text-lg font-bold text-red-400 mb-1">อยู่นอกเขตพื้นที่ทำงาน</h2>
+            <p class="text-xs text-slate-300 mb-4">เดินเข้าสู่รัศมีบริษัทแล้วหน้ายืนยันเข้างานจะเด้งอัตโนมัติ</p>
+            <p id="outside-user" class="text-xs text-slate-500"></p>
+        </div>
+
+        <!-- 3. หน้าเข้าเขต -> เด้งปุ่มเข้างานอัตโนมัติ -->
+        <div id="screen-login" class="hidden text-center py-4">
+            <div class="w-14 h-14 bg-emerald-500/20 text-emerald-400 rounded-full flex items-center justify-center mx-auto mb-3 text-lg font-bold">OK</div>
+            <h2 class="text-lg font-bold text-emerald-400 mb-1">อยู่ในเขตพื้นที่ทำงาน</h2>
+            <p id="login-user" class="text-sm text-slate-300 mb-5"></p>
+            <button onclick="checkIn()" class="w-full bg-emerald-600 hover:bg-emerald-500 font-bold py-3.5 rounded-xl shadow-lg">
+                กดยืนยันเข้างาน (Check-in)
+            </button>
+        </div>
+
+        <!-- 4. หน้ากำลังทำงาน -->
+        <div id="screen-working" class="hidden">
+            <div class="mb-4">
+                <h2 id="work-user" class="font-bold text-base text-white">พนักงาน</h2>
+                <p class="text-xs text-emerald-400">● กำลังปฏิบัติงานในพื้นที่</p>
+            </div>
+            <div class="bg-slate-900 p-4 rounded-xl text-center mb-4 border border-slate-700">
+                <p class="text-xs text-slate-400 mb-1">เวลาทำงานสะสม</p>
+                <h1 id="work-timer" class="text-3xl font-mono font-bold text-blue-400">00:00:00</h1>
+                <p id="clock-now" class="text-xs text-slate-500 mt-1">เวลาปัจจุบัน: --:--:--</p>
+            </div>
+            <button id="checkout-btn" onclick="checkOut()" disabled class="w-full bg-slate-700 text-slate-400 font-bold py-3 rounded-xl cursor-not-allowed">
+                ออกงาน [ล็อกจนถึงเวลาเลิกงาน]
+            </button>
+        </div>
+
+        <!-- ส่วนยื่นใบลา (แสดงเมื่อผูกเครื่องแล้ว) -->
+        <div id="leave-section" class="hidden border-t border-slate-700 mt-5 pt-4">
+            <button onclick="document.getElementById('leave-form').classList.toggle('hidden')" class="w-full text-xs text-blue-400 underline text-center">
+                + ยื่นใบลาหยุดงาน (คลิกเปิด/ปิด)
+            </button>
+            <div id="leave-form" class="hidden mt-3 space-y-2 text-xs">
+                <select id="leave-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <option value="ลาป่วย">ลาป่วย</option>
+                    <option value="ลากิจ">ลากิจ</option>
+                    <option value="ลาพักร้อน">ลาพักร้อน</option>
+                </select>
+                <div class="grid grid-cols-2 gap-2">
+                    <input id="leave-start" type="date" class="bg-slate-900 border border-slate-700 rounded-lg p-2">
+                    <input id="leave-end" type="date" class="bg-slate-900 border border-slate-700 rounded-lg p-2">
+                </div>
+                <input id="leave-reason" type="text" placeholder="ระบุเหตุผลการลา" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2">
+                <button onclick="submitLeave()" class="w-full bg-indigo-600 hover:bg-indigo-500 py-2 rounded-lg font-bold">ส่งคำขอลา</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- แผงช่วยหาพิกัดจริงและจำลองพรีเซนต์อาจารย์ -->
+    <div class="w-full max-w-md bg-slate-800/60 p-3 rounded-xl border border-dashed border-slate-600 mt-4 text-xs">
+        <p id="my-coords" class="text-slate-400 mb-2">พิกัดเครื่องตอนนี้: กำลังโหลด...</p>
+        <div class="grid grid-cols-2 gap-2">
+            <button onclick="setHereAsOffice()" class="bg-slate-700 py-1.5 rounded-lg">1. ตั้งจุดนี้เป็นบริษัท</button>
+            <button onclick="simulateWalkOut()" class="bg-red-900/60 text-red-200 py-1.5 rounded-lg">2. จำลองเดินออกนอกเขต</button>
+            <button onclick="forceUnlock=true" class="bg-blue-900/60 text-blue-200 py-1.5 rounded-lg">3. จำลองถึงเวลาเลิกงาน</button>
+            <a href="./admin.html" class="bg-emerald-900/60 text-emerald-200 py-1.5 rounded-lg text-center">4. ไปหน้า Admin</a>
+        </div>
+    </div>
+
+    <script>
+        if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js');
+
+        let officeLat = CONFIG.OFFICE_LAT;
+        let officeLng = CONFIG.OFFICE_LNG;
+        let curLat = null, curLng = null, simOffset = 0, forceUnlock = false, scanner = null;
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3, rad = Math.PI / 180;
+            const dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*rad)*Math.cos(lat2*rad)*Math.sin(dLon/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function showScreen(id) {
+            ['screen-bind', 'screen-outside', 'screen-login', 'screen-working'].forEach(s => {
+                document.getElementById(s).classList.add('hidden');
+            });
+            document.getElementById(id).classList.remove('hidden');
+            const isBound = !!localStorage.getItem('emp_id');
+            document.getElementById('leave-section').classList.toggle('hidden', !isBound);
+        }
+
+        function startScanner() {
+            scanner = new Html5Qrcode("qr-reader");
+            scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 200 }, (txt) => {
+                scanner.stop();
+                bindDevice(txt);
+            }, () => {}).catch(() => alert("เปิดกล้องไม่ได้ กรุณาเปิดผ่านลิงก์ HTTPS หรือพิมพ์รหัสด้านล่าง"));
+        }
+
+        async function bindDevice(rawId) {
+            const empId = rawId.trim().toUpperCase();
+            if (!empId) return alert("กรุณาระบุรหัสพนักงาน");
+            if (!db) return alert("กรุณาใส่ SUPABASE_URL และ KEY ในไฟล์ config.js ก่อน");
+
+            let myUuid = localStorage.getItem('device_uuid');
+            if (!myUuid) {
+                myUuid = crypto.randomUUID ? crypto.randomUUID() : 'DEV-' + Date.now() + Math.random();
+                localStorage.setItem('device_uuid', myUuid);
+            }
+
+            const { data: emp, error } = await db.from('employees').select('*').eq('emp_id', empId).single();
+            if (error || !emp) return alert("ไม่พบรหัสพนักงานนี้ในฐานข้อมูล");
+
+            if (emp.device_uuid && emp.device_uuid !== myUuid) {
+                return alert("ปฏิเสธการผูก: รหัสพนักงานนี้ผูกกับโทรศัพท์เครื่องอื่นไปแล้ว!");
+            }
+
+            await db.from('employees').update({ device_uuid: myUuid }).eq('emp_id', empId);
+            localStorage.setItem('emp_id', emp.emp_id);
+            localStorage.setItem('emp_name', emp.full_name);
+            alert(`ผูกเครื่องสำเร็จ: ${emp.full_name}`);
+            evaluateZone();
+        }
+
+        async function evaluateZone() {
+            const empId = localStorage.getItem('emp_id');
+            const empName = localStorage.getItem('emp_name') || empId;
+            if (!empId) return showScreen('screen-bind');
+            if (curLat === null) return;
+
+            const dist = getDistance(curLat, curLng, officeLat, officeLng);
+            document.getElementById('distance-text').innerText = `ระยะห่าง: ${Math.round(dist)} ม.`;
+            const checkedIn = localStorage.getItem('checked_in') === 'true';
+
+            if (dist <= CONFIG.MAX_RADIUS_METERS) {
+                document.getElementById('zone-badge').innerText = "● อยู่ในเขตพื้นที่";
+                document.getElementById('zone-badge').className = "font-bold text-emerald-400";
+                if (checkedIn) {
+                    document.getElementById('work-user').innerText = `${empName} (${empId})`;
+                    showScreen('screen-working');
+                } else {
+                    document.getElementById('login-user').innerText = `${empName} (${empId})`;
+                    showScreen('screen-login');
+                }
+            } else {
+                document.getElementById('zone-badge').innerText = "● นอกเขตพื้นที่!";
+                document.getElementById('zone-badge').className = "font-bold text-red-400";
+                document.getElementById('outside-user').innerText = `ผู้ใช้งาน: ${empName} (${empId})`;
+                if (checkedIn) await autoLogout();
+                showScreen('screen-outside');
+            }
+        }
+
+        async function checkIn() {
+            if (!db) return alert("ยังไม่ได้ตั้งค่า Supabase ในไฟล์ config.js");
+            const empId = localStorage.getItem('emp_id');
+            const { data, error } = await db.from('attendance')
+                .insert([{ emp_id: empId, lat: curLat, lng: curLng, status: 'เข้างานปกติ' }])
+                .select();
+            if (error) return alert("บันทึกไม่สำเร็จ: " + error.message);
+            localStorage.setItem('att_id', data[0].id);
+            localStorage.setItem('checked_in', 'true');
+            localStorage.setItem('checkin_ms', Date.now().toString());
+            evaluateZone();
+        }
+
+        async function autoLogout() {
+            const attId = localStorage.getItem('att_id');
+            if (db && attId) {
+                await db.from('attendance')
+                    .update({ check_out: new Date().toISOString(), status: 'ออกนอกเขต (เด้งออกอัตโนมัติ)' })
+                    .eq('id', attId);
+            }
+            localStorage.removeItem('checked_in');
+            alert("คุณเดินออกนอกรัศมีทำงาน ระบบตัดเวลาและล็อกเอาต์อัตโนมัติ!");
+        }
+
+        async function checkOut() {
+            const attId = localStorage.getItem('att_id');
+            if (db && attId) {
+                await db.from('attendance')
+                    .update({ check_out: new Date().toISOString(), status: 'เลิกงานปกติ' })
+                    .eq('id', attId);
+            }
+            localStorage.removeItem('checked_in');
+            forceUnlock = false;
+            alert("บันทึกเวลาเลิกงานสำเร็จ!");
+            evaluateZone();
+        }
+
+        async function submitLeave() {
+            const empId = localStorage.getItem('emp_id');
+            const leave_type = document.getElementById('leave-type').value;
+            const start_date = document.getElementById('leave-start').value;
+            const end_date = document.getElementById('leave-end').value;
+            const reason = document.getElementById('leave-reason').value;
+            if (!start_date || !end_date) return alert("กรุณาเลือกวันที่เริ่มและสิ้นสุดการลา");
+
+            const { error } = await db.from('leave_requests').insert([{ emp_id: empId, leave_type, start_date, end_date, reason }]);
+            if (error) return alert("ส่งใบลาไม่สำเร็จ: " + error.message);
+            alert("ส่งคำขอลาเรียบร้อย รอแอดมินอนุมัติ");
+            document.getElementById('leave-form').classList.add('hidden');
+        }
+
+        setInterval(() => {
+            const now = new Date();
+            document.getElementById('clock-now').innerText = `เวลาปัจจุบัน: ${now.toTimeString().split(' ')[0]}`;
+            if (localStorage.getItem('checked_in') === 'true') {
+                const sec = Math.floor((Date.now() - parseInt(localStorage.getItem('checkin_ms') || Date.now())) / 1000);
+                const h = String(Math.floor(sec / 3600)).padStart(2, '0');
+                const m = String(Math.floor((sec % 3600) / 60)).padStart(2, '0');
+                const s = String(sec % 60).padStart(2, '0');
+                document.getElementById('work-timer').innerText = `${h}:${m}:${s}`;
+
+                const btn = document.getElementById('checkout-btn');
+                if (now.getHours() >= CONFIG.SHIFT_END_HOUR || forceUnlock) {
+                    btn.disabled = false;
+                    btn.innerText = "กดบันทึกเวลาเลิกงาน (Check-out)";
+                    btn.className = "w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 rounded-xl";
+                }
+            }
+        }, 1000);
+
+        function setHereAsOffice() {
+            simOffset = 0;
+            navigator.geolocation.getCurrentPosition((p) => {
+                officeLat = curLat = p.coords.latitude;
+                officeLng = curLng = p.coords.longitude;
+                evaluateZone();
+            });
+        }
+
+        function simulateWalkOut() {
+            simOffset = 0.002;
+            curLat += simOffset; curLng += simOffset;
+            evaluateZone();
+        }
+
+        navigator.geolocation.watchPosition((p) => {
+            curLat = p.coords.latitude + simOffset;
+            curLng = p.coords.longitude + simOffset;
+            document.getElementById('my-coords').innerText = `พิกัดเครื่องตอนนี้: ${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}`;
+            evaluateZone();
+        }, () => {
+            document.getElementById('zone-badge').innerText = "● กรุณาอนุญาตสิทธิ์ GPS";
+        }, { enableHighAccuracy: true });
+
+        evaluateZone();
+    </script>
+</body>
+</html>

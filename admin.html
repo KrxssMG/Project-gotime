@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin & Payroll Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen p-6">
+
+    <div class="max-w-5xl mx-auto space-y-6">
+        <div class="flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-blue-400">ระบบจัดการพนักงานและคำนวณเงินเดือน (Admin)</h1>
+            <div class="space-x-2">
+                <button onclick="loadAllData()" class="bg-blue-600 px-4 py-2 rounded-lg text-sm font-bold">รีเฟรชข้อมูล</button>
+                <a href="./index.html" class="bg-slate-700 px-4 py-2 rounded-lg text-sm">กลับหน้าพนักงาน</a>
+            </div>
+        </div>
+
+        <!-- 1. เพิ่มพนักงานใหม่ -->
+        <div class="bg-slate-800 p-5 rounded-xl border border-slate-700">
+            <h2 class="font-bold mb-3 text-emerald-400">1. เพิ่มรายชื่อพนักงานใหม่</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+                <input id="new-id" type="text" placeholder="รหัส เช่น EMP003" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
+                <input id="new-name" type="text" placeholder="ชื่อ-นามสกุล" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
+                <input id="new-wage" type="number" value="500" placeholder="ค่าแรงต่อวัน (บาท)" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
+                <button onclick="addEmployee()" class="bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold py-2">+ บันทึกพนักงาน</button>
+            </div>
+        </div>
+
+        <!-- 2. ตารางสรุปเงินเดือนและสร้าง QR Code -->
+        <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 overflow-x-auto">
+            <h2 class="font-bold mb-3 text-amber-400">2. รายชื่อพนักงาน QR Code และสรุปเงินเดือนอัตโนมัติ</h2>
+            <table class="w-full text-left text-sm">
+                <thead class="text-slate-400 border-b border-slate-700">
+                    <tr>
+                        <th class="py-2">รหัส</th>
+                        <th>ชื่อ-นามสกุล</th>
+                        <th>สถานะมือถือ</th>
+                        <th>ค่าแรง/วัน</th>
+                        <th>วันมาทำงาน</th>
+                        <th>เงินเดือนสุทธิ</th>
+                        <th>จัดการ / QR</th>
+                    </tr>
+                </thead>
+                <tbody id="payroll-tbody" class="divide-y divide-slate-700"></tbody>
+            </table>
+        </div>
+
+        <!-- 3. อนุมัติใบลา -->
+        <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 overflow-x-auto">
+            <h2 class="font-bold mb-3 text-indigo-400">3. รายการขออนุมัติลาหยุด</h2>
+            <table class="w-full text-left text-sm">
+                <thead class="text-slate-400 border-b border-slate-700">
+                    <tr>
+                        <th class="py-2">รหัส</th>
+                        <th>ประเภท</th>
+                        <th>วันที่ลา</th>
+                        <th>เหตุผล</th>
+                        <th>สถานะ</th>
+                        <th>การจัดการ</th>
+                    </tr>
+                </thead>
+                <tbody id="leave-tbody" class="divide-y divide-slate-700"></tbody>
+            </table>
+        </div>
+
+        <!-- 4. ประวัติการลงเวลาล่าสุด -->
+        <div class="bg-slate-800 p-5 rounded-xl border border-slate-700 overflow-x-auto">
+            <h2 class="font-bold mb-3 text-slate-300">4. ประวัติการเช็คอิน-เช็คเอาต์ล่าสุด</h2>
+            <table class="w-full text-left text-xs">
+                <thead class="text-slate-400 border-b border-slate-700">
+                    <tr>
+                        <th class="py-2">รหัส</th>
+                        <th>วันที่</th>
+                        <th>เวลาเข้า</th>
+                        <th>เวลาออก</th>
+                        <th>สถานะ</th>
+                    </tr>
+                </thead>
+                <tbody id="att-tbody" class="divide-y divide-slate-700"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- กล่องแสดง QR Code ประจำตัวพนักงาน -->
+    <div id="qr-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4">
+        <div class="bg-white text-slate-900 p-6 rounded-2xl text-center max-w-xs w-full">
+            <h3 id="qr-title" class="font-bold text-lg mb-3">QR พนักงาน</h3>
+            <img id="qr-img" src="" alt="QR Code" class="mx-auto mb-4 border p-2 rounded-lg">
+            <button onclick="document.getElementById('qr-modal').classList.add('hidden')" class="w-full bg-slate-900 text-white py-2 rounded-lg font-bold">ปิดหน้าต่าง</button>
+        </div>
+    </div>
+
+    <script>
+        async function loadAllData() {
+            if (!db) return alert("กรุณาใส่ SUPABASE_URL และ KEY ในไฟล์ config.js ก่อน!");
+
+            const { data: emps } = await db.from('employees').select('*').order('emp_id');
+            const { data: atts } = await db.from('attendance').select('*').order('id', { ascending: false });
+            const { data: leaves } = await db.from('leave_requests').select('*').order('id', { ascending: false });
+
+            // คำนวณเงินเดือนจากจำนวนวันที่มาทำงานจริง (ไม่นับซ้ำในวันเดียวกัน)
+            const payrollBody = document.getElementById('payroll-tbody');
+            payrollBody.innerHTML = (emps || []).map(e => {
+                const uniqueDays = new Set((atts || []).filter(a => a.emp_id === e.emp_id).map(a => a.work_date)).size;
+                const totalPay = uniqueDays * Number(e.daily_wage);
+                const boundBadge = e.device_uuid ? '<span class="text-emerald-400">ผูกแล้ว</span>' : '<span class="text-slate-500">ยังไม่ผูก</span>';
+                return `
+                    <tr>
+                        <td class="py-3 font-mono">${e.emp_id}</td>
+                        <td>${e.full_name}</td>
+                        <td>${boundBadge}</td>
+                        <td>${e.daily_wage} ฿</td>
+                        <td class="font-bold">${uniqueDays} วัน</td>
+                        <td class="font-bold text-emerald-400">${totalPay.toLocaleString()} ฿</td>
+                        <td class="space-x-1">
+                            <button onclick="showQR('${e.emp_id}', '${e.full_name}')" class="bg-blue-600 px-2.5 py-1 rounded text-xs">QR ผูกเครื่อง</button>
+                            <button onclick="resetDevice('${e.emp_id}')" class="bg-slate-700 px-2.5 py-1 rounded text-xs">รีเซ็ตมือถือ</button>
+                        </td>
+                    </tr>`;
+            }).join('');
+
+            // แสดงใบลา
+            document.getElementById('leave-tbody').innerHTML = (leaves || []).map(l => `
+                <tr>
+                    <td class="py-2 font-mono">${l.emp_id}</td>
+                    <td>${l.leave_type}</td>
+                    <td>${l.start_date} ถึง ${l.end_date}</td>
+                    <td>${l.reason || '-'}</td>
+                    <td class="font-bold">${l.status}</td>
+                    <td class="space-x-1">
+                        <button onclick="updateLeave(${l.id}, 'อนุมัติแล้ว')" class="bg-emerald-600 px-2 py-1 rounded text-xs">อนุมัติ</button>
+                        <button onclick="updateLeave(${l.id}, 'ไม่อนุมัติ')" class="bg-red-600 px-2 py-1 rounded text-xs">ปฏิเสธ</button>
+                    </td>
+                </tr>`).join('');
+
+            // แสดงประวัติลงเวลา
+            document.getElementById('att-tbody').innerHTML = (atts || []).slice(0, 20).map(a => `
+                <tr>
+                    <td class="py-2 font-mono">${a.emp_id}</td>
+                    <td>${a.work_date}</td>
+                    <td>${new Date(a.check_in).toLocaleTimeString('th-TH')}</td>
+                    <td>${a.check_out ? new Date(a.check_out).toLocaleTimeString('th-TH') : '-'}</td>
+                    <td>${a.status}</td>
+                </tr>`).join('');
+        }
+
+        async function addEmployee() {
+            const emp_id = document.getElementById('new-id').value.trim().toUpperCase();
+            const full_name = document.getElementById('new-name').value.trim();
+            const daily_wage = Number(document.getElementById('new-wage').value || 500);
+            if (!emp_id || !full_name) return alert("กรอกรหัสและชื่อพนักงานให้ครบ");
+
+            const { error } = await db.from('employees').insert([{ emp_id, full_name, daily_wage }]);
+            if (error) return alert("เพิ่มไม่สำเร็จ: " + error.message);
+            document.getElementById('new-id').value = '';
+            document.getElementById('new-name').value = '';
+            loadAllData();
+        }
+
+        function showQR(empId, name) {
+            document.getElementById('qr-title').innerText = `${name} (${empId})`;
+            document.getElementById('qr-img').src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(empId)}`;
+            document.getElementById('qr-modal').classList.remove('hidden');
+        }
+
+        async function resetDevice(empId) {
+            if (!confirm(`ต้องการปลดล็อกเครื่องเก่าของ ${empId} ใช่ไหม?`)) return;
+            await db.from('employees').update({ device_uuid: null }).eq('emp_id', empId);
+            loadAllData();
+        }
+
+        async function updateLeave(id, status) {
+            await db.from('leave_requests').update({ status }).eq('id', id);
+            loadAllData();
+        }
+
+        loadAllData();
+    </script>
+</body>
+</html>
