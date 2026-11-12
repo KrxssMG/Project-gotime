@@ -3,7 +3,7 @@
 // ==========================================
 window.GOTIME_CONFIG = {
     SUPABASE_URL: 'https://ozkaaiqfhubfipblvpvf.supabase.co',
-    SUPABASE_ANON_KEY: 'วาง_ANON_KEY_ที่ขึ้นต้นด้วย_eyJ_ของแกตรงนี้', // <-- ใส่ ANON KEY เดิมของแกตรงนี้
+    SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im96a2FhaXFmaHViZmlwYmx2cHZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM4NTQ2NzUsImV4cCI6MjEwOTQzMDY3NX0.3hYkyH9AkBrdnOGyPSb5a98XKhvlm2ntfDmGZf69jgE', // <-- ใส่ ANON KEY เดิมของแกตรงนี้
     COMPANY_LAT: 14.358423528169764,
     COMPANY_LNG: 100.563417078266,
     MAX_RADIUS_M: 50,
