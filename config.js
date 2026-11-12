@@ -1,0 +1,50 @@
+// ==========================================
+// ไฟล์ตั้งค่ากลาง Gotime Payroll (config.js)
+// ==========================================
+window.GOTIME_CONFIG = {
+    SUPABASE_URL: 'https://ozkaaiqfhubfipblvpvf.supabase.co',
+    SUPABASE_ANON_KEY: 'วาง_ANON_KEY_ที่ขึ้นต้นด้วย_eyJ_ของแกตรงนี้', // <-- ใส่ ANON KEY เดิมของแกตรงนี้
+    COMPANY_LAT: 14.358423528169764,
+    COMPANY_LNG: 100.563417078266,
+    MAX_RADIUS_M: 50,
+    ORG_QR_TOKEN: 'GOTIME-ORG-2026'
+};
+
+// สร้างตัวเชื่อมต่อ Supabase กลางให้ทั้ง index.html และ admin.html เรียกใช้
+window.db = window.supabase.createClient(
+    window.GOTIME_CONFIG.SUPABASE_URL,
+    window.GOTIME_CONFIG.SUPABASE_ANON_KEY
+);
+
+// ฟังก์ชันคำนวณระยะห่างพิกัด GPS (Haversine Formula หน่วยเป็นเมตร)
+window.calcDistanceMeters = function(lat1, lon1, lat2, lon2) {
+    const R = 6371e3;
+    const toRad = deg => (deg * Math.PI) / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+};
+
+// ฟังก์ชันใส่ Spinner โหลดบนปุ่มอัตโนมัติ
+window.runWithLoading = async function(btn, loadingText, taskFn) {
+    if (!btn) return await taskFn();
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.classList.add('opacity-75', 'cursor-not-allowed');
+    btn.innerHTML = `<i class="fas fa-circle-notch fa-spin mr-1.5"></i>${loadingText}`;
+    try {
+        await taskFn();
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('opacity-75', 'cursor-not-allowed');
+        btn.innerHTML = originalHTML;
+    }
+};
+
+// แปลงเวลาเป็นรูปแบบไทย
+window.formatTimeTH = function(isoStr) {
+    if (!isoStr) return '-';
+    return new Date(isoStr).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+};
