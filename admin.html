@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gotime Enterprise — HR Command Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="config.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'IBM Plex Sans Thai', sans-serif; background: #f1f5f9; }
+        .argon-banner { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%); }
+        #admin-map { height: 260px; width: 100%; border-radius: 18px; z-index: 1; }
+    </style>
+</head>
+<body class="h-screen flex overflow-hidden text-slate-800">
+
+    <!-- ADMIN LOGIN OVERLAY -->
+    <div id="admin-login-screen" class="fixed inset-0 z-50 argon-banner flex items-center justify-center p-4">
+        <div class="bg-white rounded-3xl max-w-sm w-full p-8 shadow-2xl space-y-5 border border-white/20">
+            <div class="text-center space-y-1">
+                <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center mx-auto text-2xl shadow-lg shadow-indigo-500/30">
+                    <i class="fas fa-user-shield"></i>
+                </div>
+                <h1 class="text-xl font-extrabold text-slate-800 pt-2">HR Admin Command</h1>
+                <p class="text-xs text-slate-400">Gotime Enterprise Attendance & Payroll</p>
+            </div>
+            <form id="form-admin-login" class="space-y-3.5 text-xs">
+                <div>
+                    <label class="font-bold text-slate-700">ชื่อผู้ใช้ (Username)</label>
+                    <input type="text" id="login-user" value="admin" required class="w-full mt-1 px-3.5 py-2.5 bg-slate-50 border rounded-xl outline-none font-semibold">
+                </div>
+                <div>
+                    <label class="font-bold text-slate-700">รหัสผ่าน (Password)</label>
+                    <input type="password" id="login-pass" value="1234" required class="w-full mt-1 px-3.5 py-2.5 bg-slate-50 border rounded-xl outline-none font-semibold">
+                </div>
+                <p id="login-err" class="hidden text-rose-600 font-bold text-center">ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง!</p>
+                <button type="submit" class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold rounded-xl shadow-lg text-sm">
+                    <i class="fas fa-right-to-bracket mr-1.5"></i>เข้าสู่ระบบผู้ดูแล
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <aside class="w-68 bg-[#090d16] text-slate-300 flex flex-col shrink-0 border-r border-slate-800">
+        <div class="px-6 py-5 border-b border-slate-800/80 flex items-center space-x-3">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center shadow-md"><i class="fas fa-shield-halved"></i></div>
+            <div>
+                <h1 class="font-extrabold text-white text-sm tracking-wide">GOTIME <span class="text-indigo-400">ERP</span></h1>
+                <p class="text-[10px] text-emerald-400 font-semibold"><i class="fas fa-circle text-[7px] mr-1 animate-ping"></i>ซิงค์ข้อมูลสดอัตโนมัติ</p>
+            </div>
+        </div>
+
+        <nav class="flex-1 px-3 py-4 space-y-1.5 text-xs overflow-y-auto">
+            <button onclick="switchTab('overview')" id="nav-overview" class="w-full flex items-center justify-between px-3.5 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow">
+                <div class="flex items-center space-x-3"><i class="fas fa-chart-pie w-5"></i><span>ภาพรวม & ลงเวลาแทน</span></div>
+            </button>
+            <button onclick="switchTab('employees')" id="nav-employees" class="w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-slate-300 hover:bg-slate-800/80">
+                <div class="flex items-center space-x-3"><i class="fas fa-users-gear w-5 text-sky-400"></i><span>โปรไฟล์ & เตะรีเซ็ตเครื่อง</span></div>
+            </button>
+            <button onclick="switchTab('radar')" id="nav-radar" class="w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-slate-300 hover:bg-slate-800/80">
+                <div class="flex items-center space-x-3"><i class="fas fa-radiation w-5 text-rose-400"></i><span>เรดาร์พฤติกรรมสุ่มเสี่ยง</span></div>
+                <span id="badge-fraud" class="text-[10px] bg-rose-600 text-white px-2 py-0.5 rounded-full font-extrabold">0</span>
+            </button>
+            <button onclick="switchTab('announce')" id="nav-announce" class="w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-slate-300 hover:bg-slate-800/80">
+                <div class="flex items-center space-x-3"><i class="fas fa-bullhorn w-5 text-amber-400"></i><span>ประกาศโรงงาน & วันหยุด</span></div>
+            </button>
+            <button onclick="switchTab('payroll')" id="nav-payroll" class="w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-slate-300 hover:bg-slate-800/80">
+                <div class="flex items-center space-x-3"><i class="fas fa-coins w-5 text-emerald-400"></i><span>เวลาทำงาน & เงินเดือนจริง</span></div>
+            </button>
+            <button onclick="switchTab('leaves')" id="nav-leaves" class="w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-slate-300 hover:bg-slate-800/80">
+                <div class="flex items-center space-x-3"><i class="fas fa-envelope-open-text w-5 text-indigo-400"></i><span>อนุมัติใบลา</span></div>
+                <span id="badge-leaves" class="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-full font-extrabold">0</span>
+            </button>
+        </nav>
+
+        <div class="p-3.5 border-t border-slate-800 space-y-2.5">
+            <button onclick="openQRModal()" class="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-extrabold shadow-lg">
+                <i class="fas fa-qrcode mr-1.5"></i>เปิดป้าย QR สแกนเข้าเว็บทันที
+            </button>
+            <div class="flex items-center justify-between pt-1 px-1">
+                <div class="flex items-center space-x-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-300 font-bold text-xs">AN</div>
+                    <div>
+                        <p class="text-xs font-bold text-white">อมตะ นวกูล</p>
+                        <p class="text-[10px] text-emerald-400">Super Admin</p>
+                    </div>
+                </div>
+                <button onclick="logoutAdmin()" title="ออกจากระบบ" class="text-slate-400 hover:text-rose-400 text-xs p-1.5"><i class="fas fa-power-off"></i></button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="flex-1 flex flex-col overflow-y-auto">
+        <div class="argon-banner text-white pt-6 pb-20 px-8 flex justify-between items-center">
+            <div>
+                <p class="text-[10px] uppercase tracking-widest text-indigo-300 font-bold">ENTERPRISE REAL-TIME HRIS</p>
+                <h2 class="text-xl font-extrabold mt-0.5">ศูนย์ควบคุมการลงเวลา ตรวจจับความเสี่ยง และคำนวณค่าจ้าง</h2>
+            </div>
+            <div class="flex items-center space-x-2.5">
+                <span class="text-xs bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 px-4 py-2 rounded-2xl font-bold">
+                    <i class="fas fa-rotate fa-spin mr-1.5 text-emerald-300"></i>Auto-Sync ล่าสุด: <span id="conn-status">--:--:--</span>
+                </span>
+            </div>
+        </div>
+
+        <!-- KPI CARDS -->
+        <div class="px-8 -mt-12 grid grid-cols-1 md:grid-cols-4 gap-4 relative z-10">
+            <div class="bg-white rounded-2xl p-4 shadow-md border border-slate-200/80 flex justify-between items-center">
+                <div><p class="text-xs text-slate-400 font-bold">พนักงานทั้งหมด</p><p id="stat-emp" class="text-2xl font-extrabold">0</p></div>
+                <div class="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center"><i class="fas fa-users"></i></div>
+            </div>
+            <div class="bg-white rounded-2xl p-4 shadow-md border border-slate-200/80 flex justify-between items-center">
+                <div><p class="text-xs text-slate-400 font-bold">มาทำงานวันนี้ (สีเขียว)</p><p id="stat-att" class="text-2xl font-extrabold text-emerald-600">0</p></div>
+                <div class="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center"><i class="fas fa-user-check"></i></div>
+            </div>
+            <div class="bg-white rounded-2xl p-4 shadow-md border border-slate-200/80 flex justify-between items-center">
+                <div><p class="text-xs text-slate-400 font-bold">ลางานวันนี้ (สีเทา)</p><p id="stat-leave" class="text-2xl font-extrabold text-slate-600">0</p></div>
+                <div class="w-11 h-11 rounded-2xl bg-slate-100 text-slate-600 flex items-center justify-center"><i class="fas fa-file-lines"></i></div>
+            </div>
+            <div onclick="switchTab('radar')" class="bg-white rounded-2xl p-4 shadow-md border-2 border-rose-200 flex justify-between items-center cursor-pointer hover:bg-rose-50/40 transition">
+                <div><p class="text-xs text-rose-600 font-extrabold">พฤติกรรมสุ่มเสี่ยง (คลิกดู)</p><p id="stat-risk" class="text-2xl font-extrabold text-rose-600">0</p></div>
+                <div class="w-11 h-11 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center"><i class="fas fa-triangle-exclamation"></i></div>
+            </div>
+        </div>
+
+        <div id="admin-toast" class="hidden mx-8 mt-4 p-3.5 rounded-2xl text-xs font-bold shadow-md"></div>
+
+        <div class="p-8 space-y-6 flex-1">
+
+            <!-- TAB 1: OVERVIEW + ลงชื่อแทนคนไม่มีมือถือ -->
+            <section id="tab-overview" class="space-y-6">
+                <div class="bg-white rounded-3xl p-5 shadow-sm border-2 border-indigo-100 flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex items-center space-x-3.5">
+                        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white flex items-center justify-center text-lg shadow-md">
+                            <i class="fas fa-user-clock"></i>
+                        </div>
+                        <div>
+                            <h3 class="font-extrabold text-slate-800 text-sm">ระบบลงเวลาแทนพนักงาน (กรณีไม่มีโทรศัพท์มือถือ)</h3>
+                            <p class="text-xs text-slate-500">เลือกชื่อพนักงานแล้วกดบันทึกเวลาเข้า-ออกงานได้ทันที ข้อมูลซิงค์เข้าฐานข้อมูลอัตโนมัติ</p>
+                        </div>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <select id="manual-emp-select" class="px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl font-bold min-w-[220px] outline-none"></select>
+                        <button onclick="adminManualCheckIn(this)" class="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow">
+                            <i class="fas fa-right-to-bracket mr-1"></i>ลงเวลาเข้างานให้
+                        </button>
+                        <button onclick="adminManualCheckOut(this)" class="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-extrabold rounded-xl shadow">
+                            <i class="fas fa-right-from-bracket mr-1"></i>ลงเวลาออกงานให้
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex items-center justify-between">
+                        <div class="space-y-3">
+                            <h3 class="font-extrabold text-slate-800 text-base">กราฟวงกลมสัดส่วนการทำงานวันนี้</h3>
+                            <p class="text-xs text-slate-400">อัปเดตสดอัตโนมัติ (เขียว = มา / เทา = ลา / แดง = ขาด)</p>
+                            <div class="space-y-2 text-xs pt-1">
+                                <div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-emerald-500"></span><span>มาทำงาน: <strong id="chart-present-txt">0 คน</strong></span></div>
+                                <div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-slate-400"></span><span>ลางาน: <strong id="chart-leave-txt">0 คน</strong></span></div>
+                                <div class="flex items-center space-x-2"><span class="w-3 h-3 rounded-full bg-rose-500"></span><span>ขาดงาน: <strong id="chart-absent-txt" class="text-rose-600">0 คน</strong></span></div>
+                            </div>
+                        </div>
+                        <div class="relative w-40 h-40 flex items-center justify-center">
+                            <svg class="w-40 h-40 -rotate-90" viewBox="0 0 36 36">
+                                <circle cx="18" cy="18" r="15.9155" fill="none" stroke="#f1f5f9" stroke-width="4"></circle>
+                                <circle id="adm-ring-present" cx="18" cy="18" r="15.9155" fill="none" stroke="#10b981" stroke-width="4" stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                                <circle id="adm-ring-leave" cx="18" cy="18" r="15.9155" fill="none" stroke="#94a3b8" stroke-width="4" stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                                <circle id="adm-ring-absent" cx="18" cy="18" r="15.9155" fill="none" stroke="#ef4444" stroke-width="4" stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                            </svg>
+                            <div class="absolute text-center">
+                                <span id="adm-ring-pct" class="text-xl font-extrabold text-slate-800">0%</span>
+                                <span class="block text-[10px] text-slate-400">อัตราเข้างาน</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-3xl p-5 shadow-sm border border-slate-200 space-y-2">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-extrabold text-slate-800 text-sm"><i class="fas fa-map-location-dot text-indigo-600 mr-1.5"></i>พิกัดจุดเช็คอินสดของพนักงาน</h3>
+                            <span class="text-[11px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold">วงกลมสีเขียว = 50 เมตร</span>
+                        </div>
+                        <div id="admin-map" class="border border-slate-200"></div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b font-extrabold text-sm">รายการลงเวลาปฏิบัติงานล่าสุด (ซิงค์อัตโนมัติ)</div>
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-50 text-slate-500 uppercase">
+                            <tr><th class="p-3.5">พนักงาน</th><th class="p-3.5">วันที่</th><th class="p-3.5">เวลาเข้า - ออก</th><th class="p-3.5">ชั่วโมงจริง</th><th class="p-3.5">ระยะพิกัด</th><th class="p-3.5">สถานะ</th></tr>
+                        </thead>
+                        <tbody id="overview-att-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- TAB 2: EMPLOYEES PROFILE, MANUAL CHECK-IN & FORCE KICK -->
+            <section id="tab-employees" class="hidden space-y-4">
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b flex justify-between items-center">
+                        <h3 class="font-extrabold text-sm">จัดการโปรไฟล์ รูปภาพ ลงเวลาแทนคนไม่มีมือถือ และเตะรีเซ็ตเครื่อง</h3>
+                        <button onclick="openAddEmpModal()" class="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-extrabold shadow"><i class="fas fa-user-plus mr-1.5"></i>เพิ่มพนักงานใหม่ (รวมคนไม่มีมือถือ)</button>
+                    </div>
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-50 text-slate-500 uppercase">
+                            <tr>
+                                <th class="p-3.5">รูป / ชื่อ-นามสกุล</th>
+                                <th class="p-3.5">อายุ / เบอร์โทร</th>
+                                <th class="p-3.5">แผนก / ค่าจ้าง</th>
+                                <th class="p-3.5">สถานะเครื่อง</th>
+                                <th class="p-3.5">ลงชื่อให้ (ไม่มีมือถือ)</th>
+                                <th class="p-3.5 text-right">จัดการ / เตะออก</th>
+                            </tr>
+                        </thead>
+                        <tbody id="emp-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- TAB 3: RISKY BEHAVIOR RADAR -->
+            <section id="tab-radar" class="hidden space-y-4">
+                <div class="bg-slate-900 text-white p-5 rounded-3xl flex flex-wrap justify-between items-center gap-4 shadow-lg">
+                    <div>
+                        <h3 class="font-extrabold text-sm"><i class="fas fa-radiation text-rose-400 mr-2"></i>เรดาร์ตรวจจับพฤติกรรมสุ่มเสี่ยงอัตโนมัติ (Risky Behavior Engine)</h3>
+                        <p class="text-xs text-slate-400 mt-1">ตรวจจับ: 1.ล็อกอินข้ามเครื่อง 2.เดินออกนอกรัศมี 50m ระหว่างกะ 3.กดออกงานไวผิดปกติ (<5 นาที) 4.เช็คอินขอบรัศมี (40-50m) 5.Fake GPS</p>
+                    </div>
+                    <button onclick="createSampleRiskTest(this)" class="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-extrabold shadow">
+                        <i class="fas fa-bolt mr-1"></i>จำลองเหตุการณ์ความเสี่ยงเพื่อทดสอบเรดาร์
+                    </button>
+                </div>
+                <div id="radar-alerts" class="space-y-3"></div>
+            </section>
+
+            <!-- TAB 4: ANNOUNCEMENTS -->
+            <section id="tab-announce" class="hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-3 h-fit">
+                    <h3 class="font-extrabold text-sm text-slate-800"><i class="fas fa-bullhorn text-indigo-600 mr-1.5"></i>สร้างประกาศแจ้งพนักงาน</h3>
+                    <form id="form-announce" class="space-y-3 text-xs">
+                        <div>
+                            <label class="font-bold text-slate-600">หมวดหมู่ประกาศ</label>
+                            <select id="ann-category" class="w-full mt-1 px-3 py-2 bg-slate-50 border rounded-xl font-semibold">
+                                <option value="activity">กิจกรรมโรงงาน</option>
+                                <option value="holiday">แจ้งวันหยุดประจำปี / วันหยุดพิเศษ</option>
+                                <option value="urgent">แจ้งเหตุด่วน / ความปลอดภัย</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="font-bold text-slate-600">หัวข้อประกาศ *</label>
+                            <input type="text" id="ann-title" required placeholder="เช่น แจ้งวันหยุด / ประชุมประจำเดือน" class="w-full mt-1 px-3 py-2 bg-slate-50 border rounded-xl">
+                        </div>
+                        <div>
+                            <label class="font-bold text-slate-600">รายละเอียด *</label>
+                            <textarea id="ann-content" rows="3" required placeholder="รายละเอียดที่จะแสดงบนหน้าจอลูกจ้างทันที..." class="w-full mt-1 px-3 py-2 bg-slate-50 border rounded-xl"></textarea>
+                        </div>
+                        <button type="submit" id="btn-ann-submit" class="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow">เผยแพร่ประกาศทันที</button>
+                    </form>
+                </div>
+
+                <div class="lg:col-span-2 bg-white rounded-3xl p-6 shadow-sm border border-slate-200 space-y-3">
+                    <h3 class="font-extrabold text-sm text-slate-800">รายการประกาศทั้งหมดของโรงงาน</h3>
+                    <div id="admin-ann-list" class="space-y-2.5 text-xs"></div>
+                </div>
+            </section>
+
+            <!-- TAB 5: PAYROLL & TIME EDIT -->
+            <section id="tab-payroll" class="hidden space-y-6">
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b font-extrabold text-sm">ตารางคำนวณเงินเดือนตามชั่วโมงทำงานจริง (เรทชั่วโมง = ค่าจ้างรายวัน ÷ 8 ชม.)</div>
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-50 text-slate-500 uppercase">
+                            <tr><th class="p-3.5">พนักงาน</th><th class="p-3.5">อายุ</th><th class="p-3.5 text-center">ชั่วโมงทำงานรวม</th><th class="p-3.5 text-right">เรทค่าจ้าง/วัน</th><th class="p-3.5 text-right">รายได้สุทธิ (ตามเวลาจริง)</th></tr>
+                        </thead>
+                        <tbody id="payroll-summary-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b font-extrabold text-sm">แก้ไขเวลาเข้า-ออกงานย้อนหลัง</div>
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-50 text-slate-500 uppercase">
+                            <tr><th class="p-3.5">วันที่</th><th class="p-3.5">พนักงาน</th><th class="p-3.5">เวลาเข้า</th><th class="p-3.5">เวลาออก</th><th class="p-3.5 text-right">แก้ไข</th></tr>
+                        </thead>
+                        <tbody id="edit-att-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- TAB 6: LEAVES -->
+            <section id="tab-leaves" class="hidden">
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+                    <table class="w-full text-xs text-left">
+                        <thead class="bg-slate-50 text-slate-500 uppercase">
+                            <tr><th class="p-3.5">พนักงาน</th><th class="p-3.5">ประเภท</th><th class="p-3.5">วันที่ลา</th><th class="p-3.5">เหตุผล</th><th class="p-3.5">สถานะ</th><th class="p-3.5 text-right">อนุมัติ</th></tr>
+                        </thead>
+                        <tbody id="leaves-tbody" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <!-- MODAL EDIT EMPLOYEE -->
+    <div id="modal-edit-emp" class="hidden fixed inset-0 bg-slate-950/70 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl p-6 max-w-md w-full space-y-3 text-xs">
+            <h3 id="emp-modal-title" class="font-extrabold text-base">แก้ไขโปรไฟล์ลูกจ้าง</h3>
+            <input type="hidden" id="edit-emp-mode" value="edit">
+            <div class="flex items-center space-x-3 p-2.5 bg-slate-50 rounded-2xl border">
+                <img id="admin-emp-avatar-preview" src="https://ui-avatars.com/api/?name=Emp&background=4f46e5&color=fff" class="w-12 h-12 rounded-xl object-cover border">
+                <label class="px-3 py-1.5 bg-indigo-600 text-white rounded-xl font-bold cursor-pointer">
+                    <i class="fas fa-camera mr-1"></i>เปลี่ยนรูปโปรไฟล์
+                    <input type="file" accept="image/*" onchange="handleAdminAvatarFile(this)" class="hidden">
+                </label>
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+                <div class="col-span-2">
+                    <label class="font-bold">รหัสพนักงาน</label>
+                    <input type="text" id="edit-emp-id" class="w-full mt-1 px-3 py-2 border rounded-xl">
+                </div>
+                <div>
+                    <label class="font-bold">อายุ (ปี)</label>
+                    <input type="number" id="edit-emp-age" class="w-full mt-1 px-3 py-2 border rounded-xl">
+                </div>
+            </div>
+            <div>
+                <label class="font-bold">ชื่อ - นามสกุล</label>
+                <input type="text" id="edit-emp-name" class="w-full mt-1 px-3 py-2 border rounded-xl">
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="font-bold">แผนก</label>
+                    <input type="text" id="edit-emp-dept" class="w-full mt-1 px-3 py-2 border rounded-xl">
+                </div>
+                <div>
+                    <label class="font-bold">ตำแหน่ง</label>
+                    <input type="text" id="edit-emp-pos" class="w-full mt-1 px-3 py-2 border rounded-xl">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="font-bold">เบอร์โทรศัพท์</label>
+                    <input type="text" id="edit-emp-phone" class="w-full mt-1 px-3 py-2 border rounded-xl">
+                </div>
+                <div>
+                    <label class="font-bold">ค่าจ้างรายวัน (บาท)</label>
+                    <input type="number" id="edit-emp-wage" class="w-full mt-1 px-3 py-2 border rounded-xl">
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="document.getElementById('modal-edit-emp').classList.add('hidden')" class="px-4 py-2 bg-slate-100 rounded-xl font-bold">ยกเลิก</button>
+                <button onclick="saveEmployeeModal(this)" class="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold">บันทึกโปรไฟล์</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL EDIT TIME -->
+    <div id="modal-edit-att" class="hidden fixed inset-0 bg-slate-950/70 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl p-6 max-w-md w-full space-y-3 text-xs">
+            <h3 class="font-extrabold text-base">แก้ไขเวลาเข้า-ออกงาน</h3>
+            <input type="hidden" id="edit-att-id">
+            <div><label class="font-bold">เวลาเข้างาน</label><input type="datetime-local" id="edit-att-in" class="w-full mt-1 px-3 py-2 border rounded-xl"></div>
+            <div><label class="font-bold">เวลาออกงาน</label><input type="datetime-local" id="edit-att-out" class="w-full mt-1 px-3 py-2 border rounded-xl"></div>
+            <div class="flex justify-end gap-2 pt-2">
+                <button onclick="document.getElementById('modal-edit-att').classList.add('hidden')" class="px-4 py-2 bg-slate-100 rounded-xl font-bold">ยกเลิก</button>
+                <button onclick="saveAttendanceEdit(this)" class="px-4 py-2 bg-indigo-600 text-white rounded-xl font-bold">บันทึกเวลา</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL QR (ลิงก์ Vercel สแกนรอบเดียวเข้าหน้า PDPA ทันที) -->
+    <div id="modal-qr" class="hidden fixed inset-0 bg-slate-950/70 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl">
+            <div>
+                <span class="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">ONE-SCAN ACCESS</span>
+                <h3 class="font-extrabold text-base mt-1">สแกนปุ๊บ เข้าเว็บไปหน้า PDPA ทันที</h3>
+                <p class="text-[11px] text-slate-400">ใช้กล้องมือถือหรือ LINE สแกนได้เลย ไม่ต้องสแกนซ้ำ</p>
+            </div>
+            <div id="qrcode-box" class="flex justify-center p-4 bg-slate-50 rounded-2xl border"></div>
+            <div class="text-left space-y-1">
+                <label class="text-[10px] font-bold text-slate-500">ลิงก์ Vercel ของคุณ (แก้ไขแล้วกดสร้างใหม่ได้):</label>
+                <div class="flex gap-1.5">
+                    <input type="text" id="custom-vercel-url" onchange="regenerateQRFromInput()" class="flex-1 px-2.5 py-1.5 border rounded-lg text-[11px] font-mono">
+                    <button onclick="regenerateQRFromInput()" class="px-2.5 py-1.5 bg-indigo-600 text-white rounded-lg text-[11px] font-bold">อัปเดต</button>
+                </div>
+            </div>
+            <button onclick="document.getElementById('modal-qr').classList.add('hidden')" class="w-full py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold">ปิดหน้าต่าง</button>
+        </div>
+    </div>
+<!-- MODAL CONFIRM DELETE EMPLOYEE (ป๊อปอัปยืนยันการลบดีไซน์สวย) -->
+    <div id="modal-delete-emp" class="hidden fixed inset-0 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-3xl p-6 max-w-sm w-full text-center space-y-4 shadow-2xl border border-rose-100">
+            <div class="w-16 h-16 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center mx-auto text-2xl shadow-sm border border-rose-100">
+                <i class="fas fa-trash-can"></i>
+            </div>
+            <div class="space-y-1">
+                <span class="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 uppercase">Confirm Removal</span>
+                <h3 class="font-extrabold text-base text-slate-800 pt-1">ยืนยันการลบประวัติพนักงาน</h3>
+                <p id="del-emp-label" class="text-xs font-bold text-indigo-600 bg-indigo-50 py-1.5 px-3 rounded-xl inline-block mt-1">-</p>
+                <p class="text-[11px] text-slate-500 pt-1 leading-relaxed">
+                    ข้อมูลโปรไฟล์ ประวัติเวลาเข้า-ออกงาน และใบลาทั้งหมดของพนักงานคนนี้จะถูกลบออกจากระบบอย่างถาวร
+                </p>
+            </div>
+            <div class="grid grid-cols-2 gap-2.5 pt-2 text-xs">
+                <button onclick="closeDeleteEmpModal()" class="py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-extrabold transition">
+                    ยกเลิก
+                </button>
+                <button id="btn-confirm-del-emp" onclick="confirmDeleteEmployee(this)" class="py-3 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white rounded-xl font-extrabold shadow-lg shadow-rose-500/30 transition">
+                    <i class="fas fa-check mr-1"></i>ยืนยันการลบ
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        let employeesList = [], attendanceList = [], leavesList = [], announceList = [];
+        let adminMap = null, mapPinsLayer = null;
+        let adminAvatarDataUrl = '';
+
+        if (sessionStorage.getItem('gotime_admin_logged') === 'true') {
+            document.getElementById('admin-login-screen').classList.add('hidden');
+        }
+        document.getElementById('form-admin-login').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const u = document.getElementById('login-user').value.trim();
+            const p = document.getElementById('login-pass').value.trim();
+            if ((u === 'admin' && p === '1234') || (u === '68319090046' && p === '1234')) {
+                sessionStorage.setItem('gotime_admin_logged', 'true');
+                document.getElementById('admin-login-screen').classList.add('hidden');
+                if (adminMap) setTimeout(() => adminMap.invalidateSize(), 200);
+            } else {
+                document.getElementById('login-err').classList.remove('hidden');
+            }
+        });
+        function logoutAdmin() {
+            sessionStorage.removeItem('gotime_admin_logged');
+            document.getElementById('admin-login-screen').classList.remove('hidden');
+        }
+
+        function handleAdminAvatarFile(input) {
+            if (!input.files || !input.files[0]) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 180; canvas.height = 180;
+                    canvas.getContext('2d').drawImage(img, 0, 0, 180, 180);
+                    adminAvatarDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+                    document.getElementById('admin-emp-avatar-preview').src = adminAvatarDataUrl;
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+
+        function initAdminMap() {
+            if (adminMap) return;
+            adminMap = L.map('admin-map').setView([GOTIME_CONFIG.COMPANY_LAT, GOTIME_CONFIG.COMPANY_LNG], 17);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(adminMap);
+            L.circle([GOTIME_CONFIG.COMPANY_LAT, GOTIME_CONFIG.COMPANY_LNG], {
+                color: '#10b981', fillColor: '#10b981', fillOpacity: 0.22, radius: GOTIME_CONFIG.MAX_RADIUS_M
+            }).addTo(adminMap);
+            mapPinsLayer = L.layerGroup().addTo(adminMap);
+        }
+
+        function adminToast(msg, isErr = false) {
+            const el = document.getElementById('admin-toast');
+            el.className = `mx-8 mt-4 p-3.5 rounded-2xl text-xs font-bold shadow-md ${isErr ? 'bg-rose-600 text-white' : 'bg-emerald-600 text-white'}`;
+            el.innerText = msg;
+            el.classList.remove('hidden');
+            setTimeout(() => el.classList.add('hidden'), 3800);
+        }
+
+        function switchTab(tab) {
+            ['overview', 'employees', 'radar', 'announce', 'payroll', 'leaves'].forEach(t => {
+                document.getElementById('tab-' + t).classList.toggle('hidden', t !== tab);
+                document.getElementById('nav-' + t).className = t === tab
+                    ? 'w-full flex items-center justify-between px-3.5 py-3 rounded-xl bg-indigo-600 text-white font-bold shadow'
+                    : 'w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-slate-300 hover:bg-slate-800/80';
+            });
+            if (tab === 'overview' && adminMap) setTimeout(() => adminMap.invalidateSize(), 150);
+        }
+
+        async function refreshAllData() {
+            initAdminMap();
+            const [empRes, attRes, leaveRes, annRes] = await Promise.all([
+                db.from('employees').select('*').order('created_at', { ascending: false }),
+                db.from('attendance').select('*').order('check_in', { ascending: false }),
+                db.from('leave_requests').select('*').order('id', { ascending: false }),
+                db.from('announcements').select('*').order('created_at', { ascending: false })
+            ]);
+            employeesList = empRes.data || [];
+            attendanceList = attRes.data || [];
+            leavesList = leaveRes.data || [];
+            announceList = annRes.data || [];
+            document.getElementById('conn-status').innerText = new Date().toLocaleTimeString('th-TH');
+            renderAll();
+        }
+
+        function startRealtimeAutoSync() {
+            try {
+                db.channel('gotime-live-admin')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => refreshAllData())
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, () => refreshAllData())
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, () => refreshAllData())
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => refreshAllData())
+                    .subscribe();
+            } catch (e) {}
+            setInterval(refreshAllData, 3000);
+        }
+
+        async function adminManualCheckIn(btn, empIdOverride = null) {
+            const empId = empIdOverride || document.getElementById('manual-emp-select').value;
+            const emp = employeesList.find(e => e.emp_id === empId);
+            if (!emp) return adminToast('กรุณาเลือกพนักงานก่อน', true);
+
+            await runWithLoading(btn, 'กำลังบันทึก...', async () => {
+                const today = new Date().toISOString().split('T')[0];
+                const { error } = await db.from('attendance').insert([{
+                    emp_id: emp.emp_id,
+                    emp_name: emp.name,
+                    work_date: today,
+                    check_in: new Date().toISOString(),
+                    lat: GOTIME_CONFIG.COMPANY_LAT,
+                    lng: GOTIME_CONFIG.COMPANY_LNG,
+                    accuracy: 5.0,
+                    distance_m: 0,
+                    status: 'working',
+                    device_uuid: 'ADMIN-MANUAL',
+                    fraud_risk: 'normal'
+                }]);
+                if (error) return adminToast('ลงเวลาไม่สำเร็จ: ' + error.message, true);
+                adminToast(`ลงเวลาเข้างานให้ "${emp.name}" เรียบร้อยแล้ว`);
+                await refreshAllData();
+            });
+        }
+
+        async function adminManualCheckOut(btn, empIdOverride = null) {
+            const empId = empIdOverride || document.getElementById('manual-emp-select').value;
+            const emp = employeesList.find(e => e.emp_id === empId);
+            if (!emp) return adminToast('กรุณาเลือกพนักงานก่อน', true);
+
+            const activeRec = attendanceList.find(a => a.emp_id === empId && !a.check_out && a.status !== 'security_alert');
+            if (!activeRec) return adminToast(`"${emp.name}" ยังไม่ได้เช็คอินเข้างาน`, true);
+
+            await runWithLoading(btn, 'กำลังบันทึก...', async () => {
+                const outTime = new Date();
+                const hours = Math.max(0.01, (outTime - new Date(activeRec.check_in)) / 3600000);
+                const { error } = await db.from('attendance').update({
+                    check_out: outTime.toISOString(),
+                    work_hours: Number(hours.toFixed(4)),
+                    status: 'completed'
+                }).eq('id', activeRec.id);
+                if (error) return adminToast('ลงเวลาออกไม่สำเร็จ: ' + error.message, true);
+                adminToast(`ลงเวลาออกงานให้ "${emp.name}" เรียบร้อยแล้ว (${hours.toFixed(2)} ชม.)`);
+                await refreshAllData();
+            });
+        }
+
+        // ปุ่มสร้างเหตุการณ์จำลองเพื่อให้เห็นเรดาร์ทำงานทันทีตอนพรีเซนต์
+        async function createSampleRiskTest(btn) {
+            await runWithLoading(btn, 'กำลังจำลอง...', async () => {
+                const today = new Date().toISOString().split('T')[0];
+                const sampleEmp = employeesList[0] || { emp_id: '68319090046', name: 'พนักงานทดสอบ' };
+                await db.from('attendance').insert([{
+                    emp_id: sampleEmp.emp_id,
+                    emp_name: `${sampleEmp.name} [แจ้งเตือน: เดินออกนอกรัศมี 50m / พยายามล็อกอินข้ามเครื่อง]`,
+                    work_date: today,
+                    check_in: new Date(Date.now() - 120000).toISOString(),
+                    check_out: new Date().toISOString(),
+                    lat: GOTIME_CONFIG.COMPANY_LAT + 0.0006,
+                    lng: GOTIME_CONFIG.COMPANY_LNG + 0.0006,
+                    accuracy: 1.0,
+                    distance_m: 68.5,
+                    status: 'auto_checkout',
+                    device_uuid: 'ALERT-TEST',
+                    fraud_risk: 'high'
+                }]);
+                adminToast('จำลองเหตุการณ์พฤติกรรมสุ่มเสี่ยงเข้าสู่เรดาร์เรียบร้อยแล้ว!');
+                await refreshAllData();
+            });
+        }
+
+        function computeRiskyBehaviors() {
+            const alerts = [];
+
+            employeesList.forEach(e => {
+                if (e.last_risk_alert && e.last_risk_alert.trim() !== '') {
+                    alerts.push({
+                        id: null,
+                        emp_id: e.emp_id,
+                        title: `ความเสี่ยงบัญชี: ${e.name} (ID: ${e.emp_id})`,
+                        reason: e.last_risk_alert,
+                        badge: 'พยายามสวมสิทธิ์ข้ามเครื่อง'
+                    });
+                }
+            });
+
+            attendanceList.forEach(a => {
+                const reasons = [];
+                if (a.status === 'security_alert' || (a.emp_name && a.emp_name.includes('[แจ้งเตือน:'))) {
+                    reasons.push(a.emp_name);
+                }
+                if (a.status === 'auto_checkout') {
+                    reasons.push(`เดินออกนอกรัศมี 50 เมตรระหว่างเวลางาน (ระยะ ${a.distance_m ?? '-'}m ระบบตัดออกอัตโนมัติ)`);
+                }
+                if (a.accuracy !== null && Number(a.accuracy) <= 1.5 && a.device_uuid !== 'ADMIN-MANUAL') {
+                    reasons.push(`ความคลาดเคลื่อน GPS ต่ำผิดธรรมชาติ (±${a.accuracy}m เสี่ยงใช้ Fake GPS)`);
+                }
+                if (a.distance_m !== null && Number(a.distance_m) >= 40 && a.status !== 'auto_checkout') {
+                    reasons.push(`เช็คอินหมิ่นเหม่ขอบเขต 50m (ระยะ ${a.distance_m} เมตร)`);
+                }
+                if (a.check_in && a.check_out && a.status !== 'security_alert') {
+                    const mins = (new Date(a.check_out) - new Date(a.check_in)) / 60000;
+                    if (mins < 5) {
+                        reasons.push(`กดเข้าแล้วออกงานเร็วผิดปกติ (ใช้เวลาเพียง ${mins.toFixed(1)} นาที)`);
+                    }
+                }
+                if (a.fraud_risk === 'high' && reasons.length === 0) {
+                    reasons.push('ระบบตรวจพบความเสี่ยงผิดปกติในการลงเวลา');
+                }
+
+                if (reasons.length > 0) {
+                    alerts.push({
+                        id: a.id,
+                        emp_id: a.emp_id,
+                        title: `${(a.emp_name || a.emp_id).split('[')[0]} • วันที่ ${a.work_date} (${formatTimeTH(a.check_in)})`,
+                        reason: reasons.join(' • '),
+                        badge: a.status === 'auto_checkout' ? 'เดินออกนอกเขต 50m' : 'พฤติกรรมสุ่มเสี่ยง'
+                    });
+                }
+            });
+
+            return alerts;
+        }
+
+        function renderAll() {
+            const today = new Date().toISOString().split('T')[0];
+            const validAttendance = attendanceList.filter(a => a.status !== 'security_alert');
+            const totalEmp = Math.max(1, employeesList.length);
+            const presentToday = new Set(validAttendance.filter(a => a.work_date === today).map(a => a.emp_id)).size;
+            const leaveToday = leavesList.filter(l => l.status === 'approved' && l.start_date <= today && l.end_date >= today).length;
+            const absentToday = Math.max(0, employeesList.length - presentToday - leaveToday);
+            const pendingLeaves = leavesList.filter(l => l.status === 'pending').length;
+            const riskAlerts = computeRiskyBehaviors();
+
+            document.getElementById('stat-emp').innerText = employeesList.length;
+            document.getElementById('stat-att').innerText = presentToday;
+            document.getElementById('stat-leave').innerText = leaveToday;
+            document.getElementById('stat-risk').innerText = riskAlerts.length;
+            document.getElementById('badge-leaves').innerText = pendingLeaves;
+            document.getElementById('badge-fraud').innerText = riskAlerts.length;
+
+            const selectEl = document.getElementById('manual-emp-select');
+            const prevSelected = selectEl.value;
+            selectEl.innerHTML = employeesList.map(e => `<option value="${e.emp_id}">${e.name} (${e.emp_id})</option>`).join('');
+            if (prevSelected) selectEl.value = prevSelected;
+
+            const pPct = Math.round((presentToday / totalEmp) * 100);
+            const lPct = Math.round((leaveToday / totalEmp) * 100);
+            const aPct = employeesList.length === 0 ? 0 : Math.max(0, 100 - pPct - lPct);
+
+            document.getElementById('adm-ring-present').setAttribute('stroke-dasharray', `${pPct} ${100 - pPct}`);
+            document.getElementById('adm-ring-leave').setAttribute('stroke-dasharray', `${lPct} ${100 - lPct}`);
+            document.getElementById('adm-ring-leave').setAttribute('stroke-dashoffset', `-${pPct}`);
+            document.getElementById('adm-ring-absent').setAttribute('stroke-dasharray', `${aPct} ${100 - aPct}`);
+            document.getElementById('adm-ring-absent').setAttribute('stroke-dashoffset', `-${pPct + lPct}`);
+            document.getElementById('adm-ring-pct').innerText = `${pPct}%`;
+
+            document.getElementById('chart-present-txt').innerText = `${presentToday} คน (${pPct}%)`;
+            document.getElementById('chart-leave-txt').innerText = `${leaveToday} คน (${lPct}%)`;
+            document.getElementById('chart-absent-txt').innerText = `${absentToday} คน (${aPct}%)`;
+
+            if (mapPinsLayer) {
+                mapPinsLayer.clearLayers();
+                validAttendance.slice(0, 20).forEach(a => {
+                    if (a.lat && a.lng) {
+                        L.marker([a.lat, a.lng]).addTo(mapPinsLayer).bindPopup(`<b>${a.emp_name || a.emp_id}</b><br>ห่าง ${a.distance_m}m`);
+                    }
+                });
+            }
+
+            document.getElementById('overview-att-tbody').innerHTML = validAttendance.slice(0, 12).map(a => {
+                const hrs = (a.check_in && a.check_out) ? ((new Date(a.check_out) - new Date(a.check_in)) / 3600000).toFixed(2) : '-';
+                const statusBadge = a.status === 'auto_checkout'
+                    ? '<span class="px-2.5 py-1 bg-rose-100 text-rose-700 rounded-full font-extrabold">ออกนอกเขต 50m (ตัดอัตโนมัติ)</span>'
+                    : a.check_out
+                    ? '<span class="px-2.5 py-1 bg-emerald-100 text-emerald-700 rounded-full font-extrabold">ครบกะ</span>'
+                    : '<span class="px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-full font-extrabold">กำลังทำงาน</span>';
+                return `<tr>
+                    <td class="p-3.5 font-bold">${a.emp_name || a.emp_id} ${a.device_uuid === 'ADMIN-MANUAL' ? '<span class="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded ml-1">แอดมินลงให้</span>' : ''}</td>
+                    <td class="p-3.5">${a.work_date}</td>
+                    <td class="p-3.5 font-mono">${formatTimeTH(a.check_in)} - ${formatTimeTH(a.check_out)}</td>
+                    <td class="p-3.5 font-bold text-indigo-600">${hrs} ชม.</td>
+                    <td class="p-3.5">${a.distance_m ?? '-'} ม.</td>
+                    <td class="p-3.5">${statusBadge}</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('emp-tbody').innerHTML = employeesList.map(e => {
+                const localAvatar = localStorage.getItem('gotime_avatar_' + e.emp_id);
+                const avatar = (e.avatar_url && e.avatar_url.length > 10)
+                    ? e.avatar_url
+                    : (localAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(e.name || 'Emp')}&background=4f46e5&color=fff`);
+                const isWorking = validAttendance.some(a => a.emp_id === e.emp_id && !a.check_out);
+                return `<tr>
+                    <td class="p-3.5 flex items-center space-x-2.5">
+                        <img src="${avatar}" class="w-10 h-10 rounded-xl object-cover border shadow-sm">
+                        <div><p class="font-bold text-slate-800">${e.name}</p><p class="text-[10px] font-mono text-indigo-600">ID: ${e.emp_id}</p></div>
+                    </td>
+                    <td class="p-3.5"><strong>${e.age || 20} ปี</strong><br><span class="text-slate-400">${e.phone || '-'}</span></td>
+                    <td class="p-3.5">${e.department || '-'}<br><span class="font-bold text-emerald-600">฿${Number(e.daily_wage || 600)}/วัน</span></td>
+                    <td class="p-3.5">${e.device_uuid ? '<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded font-bold">ผูกเครื่องแล้ว</span>' : '<span class="px-2 py-0.5 bg-rose-50 text-rose-600 rounded font-bold">ถูกเตะออก / รอผูกใหม่</span>'}</td>
+                    <td class="p-3.5 space-x-1">
+                        ${!isWorking
+                            ? `<button onclick="adminManualCheckIn(this, '${e.emp_id}')" class="px-3 py-1.5 bg-emerald-600 text-white rounded-xl font-bold shadow-sm"><i class="fas fa-play mr-1"></i>เช็คอินให้</button>`
+                            : `<button onclick="adminManualCheckOut(this, '${e.emp_id}')" class="px-3 py-1.5 bg-amber-500 text-white rounded-xl font-bold shadow-sm"><i class="fas fa-stop mr-1"></i>เช็คเอาท์ให้</button>`
+                        }
+                    </td>
+                    <td class="p-3.5 text-right space-x-1">
+                        <button onclick="openEditEmpById('${e.emp_id}')" class="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl font-bold">แก้ไข</button>
+                        <button onclick="kickAndResetEmp('${e.emp_id}', this)" class="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold shadow-sm"><i class="fas fa-ban mr-1"></i>เตะออก/รีเซ็ต</button>
+                        <button onclick="openDeleteEmpModal('${e.emp_id || ''}', '${e.id || ''}')" class="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold shadow-sm"><i class="fas fa-trash-can mr-1"></i>ลบชื่อ</button>
+                    </td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('admin-ann-list').innerHTML = announceList.map(a => `
+                <div class="p-3.5 rounded-2xl bg-slate-50 border flex justify-between items-center">
+                    <div>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded ${a.category === 'urgent' ? 'bg-rose-100 text-rose-700' : a.category === 'holiday' ? 'bg-emerald-100 text-emerald-700' : 'bg-indigo-100 text-indigo-700'}">${a.category}</span>
+                        <p class="font-bold text-slate-800 mt-1">${a.title}</p>
+                        <p class="text-slate-500">${a.content}</p>
+                    </div>
+                    <button onclick="deleteAnnouncement(${a.id}, this)" class="text-rose-500 hover:text-rose-700 px-2"><i class="fas fa-trash"></i></button>
+                </div>
+            `).join('') || '<p class="text-slate-400">ยังไม่มีประกาศ</p>';
+
+            document.getElementById('payroll-summary-tbody').innerHTML = employeesList.map(e => {
+                const empAtt = validAttendance.filter(a => a.emp_id === e.emp_id && a.check_in && a.check_out);
+                const totalHrs = empAtt.reduce((sum, a) => sum + Math.max(0, (new Date(a.check_out) - new Date(a.check_in)) / 3600000), 0);
+                const wage = Number(e.daily_wage || 600);
+                const pay = totalHrs * (wage / 8);
+                return `<tr>
+                    <td class="p-3.5 font-bold">${e.name} (${e.emp_id})</td>
+                    <td class="p-3.5">${e.age || 20} ปี</td>
+                    <td class="p-3.5 text-center font-bold text-indigo-600">${totalHrs.toFixed(2)} ชม.</td>
+                    <td class="p-3.5 text-right">฿${wage} (฿${(wage/8).toFixed(2)}/ชม.)</td>
+                    <td class="p-3.5 text-right font-extrabold text-emerald-600">฿${pay.toFixed(2)}</td>
+                </tr>`;
+            }).join('');
+
+            document.getElementById('edit-att-tbody').innerHTML = validAttendance.slice(0, 15).map(a => `
+                <tr>
+                    <td class="p-3.5">${a.work_date}</td>
+                    <td class="p-3.5 font-bold">${a.emp_name || a.emp_id}</td>
+                    <td class="p-3.5 font-mono">${formatTimeTH(a.check_in)}</td>
+                    <td class="p-3.5 font-mono">${formatTimeTH(a.check_out)}</td>
+                    <td class="p-3.5 text-right"><button onclick="openEditAttById('${a.id}')" class="px-3 py-1 bg-slate-100 rounded-lg font-bold">แก้เวลา</button></td>
+                </tr>
+            `).join('');
+
+            document.getElementById('leaves-tbody').innerHTML = leavesList.map(l => `
+                <tr>
+                    <td class="p-3.5 font-bold">${l.emp_id}</td>
+                    <td class="p-3.5">${l.leave_type}</td>
+                    <td class="p-3.5">${l.start_date} ถึง ${l.end_date}</td>
+                    <td class="p-3.5">${l.reason || '-'}</p></td>
+                    <td class="p-3.5 font-bold">${l.status}</td>
+                    <td class="p-3.5 text-right space-x-1">
+                        <button onclick="updateLeaveStatus(${l.id}, 'approved', this)" class="px-3 py-1 bg-emerald-600 text-white rounded-lg font-bold">อนุมัติ</button>
+                        <button onclick="updateLeaveStatus(${l.id}, 'rejected', this)" class="px-3 py-1 bg-rose-600 text-white rounded-lg font-bold">ไม่อนุมัติ</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('radar-alerts').innerHTML = riskAlerts.map(r => `
+                <div class="bg-white border-l-4 border-l-rose-600 p-4 rounded-2xl shadow-sm flex justify-between items-center">
+                    <div>
+                        <span class="text-[10px] font-extrabold px-2.5 py-0.5 bg-rose-100 text-rose-700 rounded-full">${r.badge}</span>
+                        <p class="font-extrabold text-slate-800 text-sm mt-1">${r.title}</p>
+                        <p class="text-xs text-rose-600 font-bold mt-0.5"><i class="fas fa-circle-exclamation mr-1"></i>ตรวจพบ: ${r.reason}</p>
+                    </div>
+                    <button onclick="dismissRiskAlert('${r.emp_id}', '${r.id || ''}', this)" class="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-extrabold">รับทราบ/เคลียร์</button>
+                </div>
+            `).join('') || '<div class="bg-white p-8 rounded-3xl text-center text-emerald-600 font-extrabold border border-emerald-100"><i class="fas fa-shield-check text-2xl mb-2 block"></i>ยังไม่พบพฤติกรรมสุ่มเสี่ยงในขณะนี้ (กดปุ่มสีแดงด้านบนเพื่อจำลองทดสอบได้)</div>';
+        }
+
+        async function dismissRiskAlert(empId, attId, btn) {
+            await runWithLoading(btn, '...', async () => {
+                try { await db.from('employees').update({ last_risk_alert: '' }).eq('emp_id', empId); } catch (e) {}
+                if (attId) {
+                    const rec = attendanceList.find(x => String(x.id) === String(attId));
+                    if (rec && rec.status === 'security_alert') {
+                        await db.from('attendance').delete().eq('id', attId);
+                    } else if (rec) {
+                        await db.from('attendance').update({ fraud_risk: 'normal', status: 'completed', distance_m: 10, accuracy: 10 }).eq('id', attId);
+                    }
+                }
+                await refreshAllData();
+            });
+        }
+
+        document.getElementById('form-announce').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btn-ann-submit');
+            await runWithLoading(btn, 'กำลังประกาศ...', async () => {
+                await db.from('announcements').insert([{
+                    category: document.getElementById('ann-category').value,
+                    title: document.getElementById('ann-title').value.trim(),
+                    content: document.getElementById('ann-content').value.trim()
+                }]);
+                document.getElementById('ann-title').value = '';
+                document.getElementById('ann-content').value = '';
+                adminToast('เผยแพร่ประกาศโรงงานเรียบร้อยแล้ว!');
+                await refreshAllData();
+            });
+        });
+
+        async function deleteAnnouncement(id, btn) {
+            await runWithLoading(btn, '...', async () => {
+                await db.from('announcements').delete().eq('id', id);
+                await refreshAllData();
+            });
+        }
+
+        function openAddEmpModal() {
+            adminAvatarDataUrl = '';
+            document.getElementById('emp-modal-title').innerText = 'เพิ่มพนักงานใหม่ (รวมคนไม่มีมือถือ)';
+            document.getElementById('edit-emp-mode').value = 'add';
+            document.getElementById('edit-emp-id').disabled = false;
+            document.getElementById('edit-emp-id').value = '';
+            document.getElementById('edit-emp-name').value = '';
+            document.getElementById('edit-emp-age').value = 20;
+            document.getElementById('edit-emp-phone').value = '';
+            document.getElementById('edit-emp-dept').value = 'ฝ่ายผลิต';
+            document.getElementById('edit-emp-pos').value = 'พนักงานประจำ';
+            document.getElementById('edit-emp-wage').value = 600;
+            document.getElementById('admin-emp-avatar-preview').src = 'https://ui-avatars.com/api/?name=New&background=4f46e5&color=fff';
+            document.getElementById('modal-edit-emp').classList.remove('hidden');
+        }
+
+        function openEditEmpById(empId) {
+            const emp = employeesList.find(x => x.emp_id === empId);
+            if (!emp) return;
+            const localAvatar = localStorage.getItem('gotime_avatar_' + emp.emp_id);
+            adminAvatarDataUrl = emp.avatar_url || localAvatar || '';
+            document.getElementById('emp-modal-title').innerText = 'แก้ไขโปรไฟล์ รูปภาพ และอายุพนักงาน';
+            document.getElementById('edit-emp-mode').value = 'edit';
+            document.getElementById('edit-emp-id').disabled = true;
+            document.getElementById('edit-emp-id').value = emp.emp_id;
+            document.getElementById('edit-emp-name').value = emp.name || '';
+            document.getElementById('edit-emp-age').value = emp.age || 20;
+            document.getElementById('edit-emp-phone').value = emp.phone || '';
+            document.getElementById('edit-emp-dept').value = emp.department || '';
+            document.getElementById('edit-emp-pos').value = emp.position || '';
+            document.getElementById('edit-emp-wage').value = emp.daily_wage || 600;
+            document.getElementById('admin-emp-avatar-preview').src = adminAvatarDataUrl.length > 10
+                ? adminAvatarDataUrl
+                : `https://ui-avatars.com/api/?name=${encodeURIComponent(emp.name)}&background=4f46e5&color=fff`;
+            document.getElementById('modal-edit-emp').classList.remove('hidden');
+        }
+
+        async function saveEmployeeModal(btn) {
+            await runWithLoading(btn, 'บันทึก...', async () => {
+                const mode = document.getElementById('edit-emp-mode').value;
+                const empId = document.getElementById('edit-emp-id').value.trim();
+                if (adminAvatarDataUrl) localStorage.setItem('gotime_avatar_' + empId, adminAvatarDataUrl);
+
+                const basePayload = {
+                    name: document.getElementById('edit-emp-name').value.trim(),
+                    age: Number(document.getElementById('edit-emp-age').value || 20),
+                    phone: document.getElementById('edit-emp-phone').value.trim(),
+                    department: document.getElementById('edit-emp-dept').value.trim(),
+                    position: document.getElementById('edit-emp-pos').value.trim(),
+                    daily_wage: Number(document.getElementById('edit-emp-wage').value || 600)
+                };
+
+                let res = mode === 'add'
+                    ? await db.from('employees').insert([{ emp_id: empId, ...basePayload, avatar_url: adminAvatarDataUrl }])
+                    : await db.from('employees').update({ ...basePayload, avatar_url: adminAvatarDataUrl }).eq('emp_id', empId);
+
+                if (res.error) {
+                    res = mode === 'add'
+                        ? await db.from('employees').insert([{ emp_id: empId, ...basePayload }])
+                        : await db.from('employees').update(basePayload).eq('emp_id', empId);
+                }
+
+                if (res.error) return adminToast('บันทึกไม่สำเร็จ: ' + res.error.message, true);
+                document.getElementById('modal-edit-emp').classList.add('hidden');
+                adminToast('บันทึกข้อมูลโปรไฟล์และรูปภาพเรียบร้อยแล้ว');
+                await refreshAllData();
+            });
+        }
+
+        async function kickAndResetEmp(empId, btn) {
+            await runWithLoading(btn, 'กำลังเตะออก...', async () => {
+                await db.from('employees').update({ device_uuid: null }).eq('emp_id', empId);
+                adminToast(`สั่งเด้งออกจากระบบและปลดล็อกเครื่องของรหัส ${empId} ทันทีแล้ว!`);
+                await refreshAllData();
+            });
+        }
+
+        // ฟังก์ชันลบพนักงานที่ลาออก (ลบทั้งโปรไฟล์ + ประวัติลงเวลา + ใบลา)
+        let targetDeleteEmpId = '';
+        let targetDeleteRowId = '';
+
+        function deleteEmployee(empId, empName, btn) {
+            openDeleteEmpModal(empId, '');
+        }
+
+        function openDeleteEmpModal(empId, rowId) {
+            targetDeleteEmpId = empId;
+            targetDeleteRowId = rowId;
+            const emp = employeesList.find(x => (empId && x.emp_id === empId) || (rowId && String(x.id) === String(rowId)));
+            const displayName = emp?.name || empName || 'ไม่ระบุชื่อ';
+            const displayId = emp?.emp_id || empId || 'ไม่มีรหัส';
+            document.getElementById('del-emp-label').innerText = `${displayName} (ID: ${displayId})`;
+            document.getElementById('modal-delete-emp').classList.remove('hidden');
+        }
+
+        function closeDeleteEmpModal() {
+            document.getElementById('modal-delete-emp').classList.add('hidden');
+        }
+
+        async function confirmDeleteEmployee(btn) {
+            await runWithLoading(btn, 'กำลังลบ...', async () => {
+                if (targetDeleteEmpId && targetDeleteEmpId !== 'undefined' && targetDeleteEmpId !== 'null') {
+                    await db.from('attendance').delete().eq('emp_id', targetDeleteEmpId);
+                    await db.from('leave_requests').delete().eq('emp_id', targetDeleteEmpId);
+                    await db.from('employees').delete().eq('emp_id', targetDeleteEmpId);
+                    localStorage.removeItem('gotime_avatar_' + targetDeleteEmpId);
+                } else {
+                    await db.from('employees').delete().eq('emp_id', '');
+                    await db.from('employees').delete().is('emp_id', null);
+                    await db.from('employees').delete().eq('name', '');
+                    await db.from('employees').delete().is('name', null);
+                    await db.from('attendance').delete().eq('emp_id', '');
+                    await db.from('attendance').delete().is('emp_id', null);
+                }
+                closeDeleteEmpModal();
+                adminToast('ลบข้อมูลประวัติพนักงานออกจากระบบเรียบร้อยแล้ว');
+                await refreshAllData();
+            });
+        }
+        async function updateLeaveStatus(id, status, btn) {
+            await runWithLoading(btn, '...', async () => {
+                await db.from('leave_requests').update({ status }).eq('id', id);
+                adminToast('อัปเดตสถานะใบลาแล้ว');
+                await refreshAllData();
+            });
+        }
+
+        function openEditAttById(id) {
+            const att = attendanceList.find(x => String(x.id) === String(id));
+            if (!att) return;
+            const toLocal = iso => { if (!iso) return ''; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+            document.getElementById('edit-att-id').value = att.id;
+            document.getElementById('edit-att-in').value = toLocal(att.check_in);
+            document.getElementById('edit-att-out').value = toLocal(att.check_out);
+            document.getElementById('modal-edit-att').classList.remove('hidden');
+        }
+
+        async function saveAttendanceEdit(btn) {
+            await runWithLoading(btn, 'บันทึก...', async () => {
+                const id = document.getElementById('edit-att-id').value;
+                const inVal = document.getElementById('edit-att-in').value;
+                const outVal = document.getElementById('edit-att-out').value;
+                await db.from('attendance').update({
+                    check_in: inVal ? new Date(inVal).toISOString() : null,
+                    check_out: outVal ? new Date(outVal).toISOString() : null,
+                    status: outVal ? 'completed' : 'working'
+                }).eq('id', id);
+                document.getElementById('modal-edit-att').classList.add('hidden');
+                adminToast('แก้ไขเวลาเรียบร้อย');
+                await refreshAllData();
+            });
+        }
+
+        function openQRModal() {
+            const defaultBase = window.location.origin.includes('127.0.0.1') || window.location.origin.includes('localhost')
+                ? (localStorage.getItem('gotime_vercel_domain') || 'https://my-project-a0kusa1fe-sorakirit79-8048.vercel.app')
+                : window.location.origin;
+            document.getElementById('custom-vercel-url').value = defaultBase;
+            regenerateQRFromInput();
+            document.getElementById('modal-qr').classList.remove('hidden');
+        }
+
+        function regenerateQRFromInput() {
+            const box = document.getElementById('qrcode-box');
+            box.innerHTML = '';
+            const cleanDomain = document.getElementById('custom-vercel-url').value.trim().replace(/\/$/, '');
+            localStorage.setItem('gotime_vercel_domain', cleanDomain);
+            const qrUrl = `${cleanDomain}/?org_qr=${GOTIME_CONFIG.ORG_QR_TOKEN}`;
+            new QRCode(box, {
+                text: qrUrl,
+                width: 220,
+                height: 220,
+                colorDark: "#0f172a",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.L
+            });
+        }
+
+        refreshAllData();
+        startRealtimeAutoSync();
+    </script>
+</body>
+</html>
